@@ -66,6 +66,7 @@ void setup() {
 
     byte *echoPins = new byte[2]{FRONT_ECHO, SIDE_ECHO};
     HCSR04.begin(TRIG, echoPins, 2);
+    pinMode(HALL_SENSOR, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(HALL_SENSOR), hallSensorISR, FALLING);
     xCorrectDirectionQueue = xQueueCreate(5, sizeof(bool));
 
@@ -77,7 +78,7 @@ void setup() {
                             &wallFollowTaskHandle, 0);
 
     if (wallFollowTaskHandle == NULL) {
-        ESP_LOGW(mainLogTag, "movement task: failed to create");
+        ESP_LOGW(mainLogTag, "Movement task: failed to create");
     } else {
         vTaskSuspend(wallFollowTaskHandle);
         ESP_LOGD(mainLogTag, "Memory free: %d", ESP.getFreeHeap());
@@ -129,6 +130,7 @@ void onEventsCallback(websockets::WebsocketsEvent event, String data) {
 void onMessageCallback(websockets::WebsocketsMessage message) {
     if (message.data() == "start") {
         ESP_LOGI(mainLogTag, "Machine started");
+        state.remoteMode = false;
         if (wallFollowTaskHandle != NULL) {
             state.referenceAngle = state.angle;
             wheels.forward(true);
@@ -136,6 +138,7 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
         }
     } else if (message.data() == "stop") {
         ESP_LOGI(mainLogTag, "Machine stopped");
+        state.remoteMode = false;
         if (wallFollowTaskHandle != NULL) {
             // vTaskSuspend(wallFollowTaskHandle);
             wheels.stop();
@@ -145,14 +148,19 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
     } else if (message.data() == "resume") {
         ESP_LOGI(mainLogTag, "Machine resumed");
     } else if (message.data() == "remote_forward") {
+        state.remoteMode = true;
         wheels.forward(true);
     } else if (message.data() == "remote_backward") {
+        state.remoteMode = true;
         wheels.backward();
     } else if (message.data() == "remote_left") {
+        state.remoteMode = true;
         wheels.left();
     } else if (message.data() == "remote_right") {
+        state.remoteMode = true;
         wheels.right();
     } else if (message.data() == "remote_stop") {
+        state.remoteMode = true;
         wheels.stop();
     }
 }
@@ -218,9 +226,13 @@ void setYawTask(void *pvParameters) {
         if (correctedYaw < 0) correctedYaw += 360.0;
 
         state.angle = correctedYaw;
-        if (!isCorrecting and wheels.direction == wheelDirection::FORWARD and
-            fabs(state.referenceAngle - correctedYaw) > 3.0) {
+        if (!state.remoteMode and !isCorrecting and
+            wheels.direction == wheelDirection::FORWARD and
+            fabs(state.referenceAngle - correctedYaw) > 2.0) {
             bool toRight = (state.referenceAngle < correctedYaw);
+            ESP_LOGD(mainLogTag, "toRight=%s, ref: %.2f, curr: %.2f",
+                     toRight ? "true" : "false", state.referenceAngle,
+                     correctedYaw);
             xQueueSend(xCorrectDirectionQueue, &toRight, 0);
             isCorrecting = true;
         }
@@ -231,14 +243,16 @@ void setYawTask(void *pvParameters) {
 }
 
 void correctionTask(void *pvParameters) {
-    bool direction;
+    bool toRight;
+    const bool enableSmooth = false;
     while (true) {
-        if (xQueueReceive(xCorrectDirectionQueue, &direction, portMAX_DELAY) ==
+        if (xQueueReceive(xCorrectDirectionQueue, &toRight, portMAX_DELAY) ==
             pdTRUE) {
-            ESP_LOGD(mainLogTag, "Correction");
-            wheels.correction(direction);
-            vTaskDelay(pdMS_TO_TICKS(10));
-            wheels.forward(false);
+            ESP_LOGD(mainLogTag, "Correction to right=%s",
+                     toRight ? "true" : "false");
+            wheels.correction(toRight);
+            vTaskDelay(pdMS_TO_TICKS(300));
+            wheels.forward(enableSmooth);
             isCorrecting = false;
         }
     }

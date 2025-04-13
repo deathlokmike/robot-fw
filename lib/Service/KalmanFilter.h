@@ -5,6 +5,7 @@ struct State {
     double angle;
     bool isAngle;
     double referenceAngle;
+    bool remoteMode;
 };
 
 class KalmanFilter {

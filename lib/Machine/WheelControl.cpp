@@ -37,11 +37,11 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
     analogWrite(gpio2, isStarting ? direction : wheelDirection::STOP);
 }
 
-void WheelControl::forward(bool enableSmooth) {
+void WheelControl::forward(bool enableSmoothStart) {
     analogWrite(in1, 0);
     analogWrite(in3, 0);
     direction = wheelDirection::FORWARD;
-    if (enableSmooth)
+    if (enableSmoothStart)
         smoothControl(in2, in4, true);
     else {
         analogWrite(in2, direction);
@@ -71,8 +71,8 @@ void WheelControl::right() {
 }
 
 void WheelControl::correction(bool toRight) {
-    analogWrite(in1, toRight ? wheelDirection::CORRECTION : direction);
-    analogWrite(in3, toRight ? direction : wheelDirection::CORRECTION);
+    analogWrite(in2, toRight ? direction : wheelDirection::CORRECTION);
+    analogWrite(in4, toRight ? wheelDirection::CORRECTION : direction);
 }
 
 void WheelControl::stop() {

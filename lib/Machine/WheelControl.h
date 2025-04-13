@@ -3,10 +3,10 @@
 
 enum wheelDirection : uint8_t {
     FORWARD = 190,
-    BACKWARD = 130,
+    BACKWARD = FORWARD - 60,
     RIGHT = FORWARD - 120,
     LEFT = FORWARD - 119,
-    CORRECTION = FORWARD - 20,
+    CORRECTION = FORWARD - 100,
     STOP = 0
 };
 
@@ -24,7 +24,7 @@ class WheelControl {
     uint8_t direction = wheelDirection::STOP;
     WheelControl();
     void attach(uint8_t in1_, uint8_t in2_, uint8_t in3_, uint8_t in4_);
-    void forward(bool enableSmooth);
+    void forward(bool enableSmoothStart);
     void backward();
     void left();
     void right();
