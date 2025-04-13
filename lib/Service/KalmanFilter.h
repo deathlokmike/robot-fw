@@ -3,6 +3,8 @@ struct State {
     double distanceSide;
     double distanceHall;
     double angle;
+    bool isAngle;
+    double referenceAngle;
 };
 
 class KalmanFilter {

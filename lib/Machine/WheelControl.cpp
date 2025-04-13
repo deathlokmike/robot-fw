@@ -33,57 +33,68 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
         delay(delay_time);
     }
 
-    analogWrite(gpio1, isStarting ? direction : 0);
-    analogWrite(gpio2, isStarting ? direction : 0);
+    analogWrite(gpio1, isStarting ? direction : wheelDirection::STOP);
+    analogWrite(gpio2, isStarting ? direction : wheelDirection::STOP);
 }
 
-void WheelControl::forward() {
+void WheelControl::forward(bool enableSmooth) {
     analogWrite(in1, 0);
     analogWrite(in3, 0);
-    direction = wheel_direction::forward;
-    smoothControl(in2, in4, true);
+    direction = wheelDirection::FORWARD;
+    if (enableSmooth)
+        smoothControl(in2, in4, true);
+    else {
+        analogWrite(in2, direction);
+        analogWrite(in4, direction);
+    }
 }
 
 void WheelControl::backward() {
     analogWrite(in2, 0);
     analogWrite(in4, 0);
-    direction = wheel_direction::backward;
+    direction = wheelDirection::BACKWARD;
     smoothControl(in1, in3, true);
 }
 
 void WheelControl::left() {
     analogWrite(in2, 0);
     analogWrite(in3, 0);
-    direction = wheel_direction::left;
+    direction = wheelDirection::LEFT;
     smoothControl(in1, in4, true);
 }
+
 void WheelControl::right() {
     analogWrite(in1, 0);
     analogWrite(in4, 0);
-    direction = wheel_direction::right;
+    direction = wheelDirection::RIGHT;
     smoothControl(in2, in3, true);
+}
+
+void WheelControl::correction(bool toRight) {
+    analogWrite(in1, toRight ? wheelDirection::CORRECTION : direction);
+    analogWrite(in3, toRight ? direction : wheelDirection::CORRECTION);
 }
 
 void WheelControl::stop() {
     switch (direction) {
-        case wheel_direction::forward:
+        case wheelDirection::FORWARD:
             smoothControl(in2, in4, false);
             break;
-        case wheel_direction::backward:
+        case wheelDirection::BACKWARD:
             smoothControl(in1, in3, false);
             break;
-        case wheel_direction::left:
+        case wheelDirection::LEFT:
             smoothControl(in1, in4, false);
             break;
-        case wheel_direction::right:
+        case wheelDirection::RIGHT:
             smoothControl(in2, in3, false);
             break;
         default:
             break;
     }
-    direction = -1;
-    analogWrite(in1, 0);
-    analogWrite(in2, 0);
-    analogWrite(in3, 0);
-    analogWrite(in4, 0);
+    direction = wheelDirection::STOP;
+    analogWrite(in1, wheelDirection::STOP);
+    analogWrite(in2, wheelDirection::STOP);
+    analogWrite(in3, wheelDirection::STOP);
+    analogWrite(in4, wheelDirection::STOP);
 }

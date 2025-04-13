@@ -19,8 +19,13 @@ INA219_WE ina;
 MPU6050 mpu;
 WheelControl wheels;
 
-volatile uint32_t lastInterruptTime = 0;
+SemaphoreHandle_t xCorrectSemaphore;
+QueueHandle_t xCorrectDirectionQueue;
+TaskHandle_t wallFollowTaskHandle;
+
+volatile unsigned long lastInterruptTime = 0;
 volatile uint8_t lastDirection = -1;
+volatile bool isCorrecting = false;
 
 volatile State state;
 
@@ -28,6 +33,8 @@ void IRAM_ATTR hallSensorISR();
 void wsPolling(void *pvParameters);
 void setYawTask(void *pvParameters);
 void setDistanceTask(void *pvParameters);
+void wallFollowTask(void *pvParameters);
+void correctionTask(void *pvParameters);
 
 void connectToWifi();
 void connectToServer();
@@ -60,9 +67,21 @@ void setup() {
     byte *echoPins = new byte[2]{FRONT_ECHO, SIDE_ECHO};
     HCSR04.begin(TRIG, echoPins, 2);
     attachInterrupt(digitalPinToInterrupt(HALL_SENSOR), hallSensorISR, FALLING);
+    xCorrectDirectionQueue = xQueueCreate(5, sizeof(bool));
+
     xTaskCreatePinnedToCore(wsPolling, "ws", 8192, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(setYawTask, "yt", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(setYawTask, "yaw", 4096, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(correctionTask, "corr", 2048, NULL, 4, NULL, 1);
     xTaskCreatePinnedToCore(setDistanceTask, "dt", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(wallFollowTask, "movement", 4096, NULL, 1,
+                            &wallFollowTaskHandle, 0);
+
+    if (wallFollowTaskHandle == NULL) {
+        ESP_LOGW(mainLogTag, "movement task: failed to create");
+    } else {
+        vTaskSuspend(wallFollowTaskHandle);
+        ESP_LOGD(mainLogTag, "Memory free: %d", ESP.getFreeHeap());
+    }
 }
 
 String getSensorData() {
@@ -110,14 +129,23 @@ void onEventsCallback(websockets::WebsocketsEvent event, String data) {
 void onMessageCallback(websockets::WebsocketsMessage message) {
     if (message.data() == "start") {
         ESP_LOGI(mainLogTag, "Machine started");
+        if (wallFollowTaskHandle != NULL) {
+            state.referenceAngle = state.angle;
+            wheels.forward(true);
+            // vTaskResume(wallFollowTaskHandle);
+        }
     } else if (message.data() == "stop") {
         ESP_LOGI(mainLogTag, "Machine stopped");
+        if (wallFollowTaskHandle != NULL) {
+            // vTaskSuspend(wallFollowTaskHandle);
+            wheels.stop();
+        }
     } else if (message.data() == "suspend") {
         ESP_LOGI(mainLogTag, "Machine suspended");
     } else if (message.data() == "resume") {
         ESP_LOGI(mainLogTag, "Machine resumed");
     } else if (message.data() == "remote_forward") {
-        wheels.forward();
+        wheels.forward(true);
     } else if (message.data() == "remote_backward") {
         wheels.backward();
     } else if (message.data() == "remote_left") {
@@ -156,40 +184,64 @@ void connectToWifi() {
 void IRAM_ATTR hallSensorISR() {
     ESP_LOGI(mainLogTag, "Interrupt by Hall");
     lastDirection = wheels.direction;
-    if (wheels.direction == wheel_direction::left or
-        wheels.direction == wheel_direction::right)
+    if (wheels.direction == wheelDirection::LEFT or
+        wheels.direction == wheelDirection::RIGHT)
         return;
 
-    uint32_t currentTime = millis();
-    if (currentTime - lastInterruptTime <= 500) return;
+    unsigned long currentTime = millis();
+    if (currentTime - lastInterruptTime <= 1000) return;
     lastInterruptTime = currentTime;
-    if (lastDirection == wheel_direction::left or
-        lastDirection == wheel_direction::right)
+    if (lastDirection == wheelDirection::LEFT or
+        lastDirection == wheelDirection::RIGHT)
         return;
-    if (wheels.direction == wheel_direction::forward)
+    if (wheels.direction == wheelDirection::FORWARD)
         state.distanceHall += WHEEL_DISTANCE_MM;
-    else if (wheels.direction == wheel_direction::backward)
+    else if (wheels.direction == wheelDirection::BACKWARD)
         state.distanceHall -= WHEEL_DISTANCE_MM;
 }
 
 void setYawTask(void *pvParameters) {
-    long previousTime = 0;
+    long previousTime = millis();
     double yaw = 0.0;
     double correctedYaw = 0.0;
+    const double second = 1000.0;
     int16_t ax, ay, az, gx, gy, gz;
+
     while (true) {
         long currentTime = millis();
         mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-        double dt = (currentTime - previousTime) / 1000.0;
+        double dt = (currentTime - previousTime) / second;
         previousTime = currentTime;
-        yaw += static_cast<double>(gz) * dt / GYRO_SENSITIVITY;
 
+        yaw += static_cast<double>(gz) * dt / GYRO_SENSITIVITY;
         correctedYaw = fmod(yaw, 360.0);
         if (correctedYaw < 0) correctedYaw += 360.0;
+
         state.angle = correctedYaw;
-        vTaskDelay(pdMS_TO_TICKS(10));
+        if (!isCorrecting and wheels.direction == wheelDirection::FORWARD and
+            fabs(state.referenceAngle - correctedYaw) > 3.0) {
+            bool toRight = (state.referenceAngle < correctedYaw);
+            xQueueSend(xCorrectDirectionQueue, &toRight, 0);
+            isCorrecting = true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
+
     vTaskDelete(NULL);
+}
+
+void correctionTask(void *pvParameters) {
+    bool direction;
+    while (true) {
+        if (xQueueReceive(xCorrectDirectionQueue, &direction, portMAX_DELAY) ==
+            pdTRUE) {
+            ESP_LOGD(mainLogTag, "Correction");
+            wheels.correction(direction);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            wheels.forward(false);
+            isCorrecting = false;
+        }
+    }
 }
 
 void setDistanceTask(void *pvParameters) {
@@ -211,4 +263,24 @@ void setDistanceTask(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
+double getStableDistance(const volatile double *distancePtr) {
+    double sum = 0;
+    double minVal = 1e9, maxVal = 0;
+    uint8_t num_samples = 3;
+
+    for (uint8_t i = 0; i < num_samples; i++) {
+        double d = *distancePtr;
+        sum += d;
+        if (d < minVal) minVal = d;
+        if (d > maxVal) maxVal = d;
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+
+    if ((maxVal - minVal) > 10.0) {
+        return -1;
+    }
+
+    return sum / num_samples;
+}
+void wallFollowTask(void *pvParameters) { vTaskDelay(portMAX_DELAY); }
 void loop() { vTaskDelay(portMAX_DELAY); }
