@@ -1,13 +1,3 @@
-struct State {
-    double distanceFront;
-    double distanceSide;
-    double distanceHall;
-    double angle;
-    bool isAngle;
-    double referenceAngle;
-    bool remoteMode;
-};
-
 class KalmanFilter {
    private:
     double R;

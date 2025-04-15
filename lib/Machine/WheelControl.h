@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-enum wheelDirection : uint8_t {
+enum Direction : uint8_t {
     FORWARD = 190,
     BACKWARD = FORWARD - 60,
     RIGHT = FORWARD - 120,
@@ -21,7 +21,7 @@ class WheelControl {
     void setup();
 
    public:
-    uint8_t direction = wheelDirection::STOP;
+    uint8_t direction = Direction::STOP;
     WheelControl();
     void attach(uint8_t in1_, uint8_t in2_, uint8_t in3_, uint8_t in4_);
     void forward(bool enableSmoothStart);
