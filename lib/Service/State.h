@@ -3,7 +3,7 @@
 
 #include "WheelControl.h"
 
-enum Correction : uint8_t { TO_RIGHT, TO_LEFT, NO };
+enum Correction : uint8_t { TO_RIGHT, TO_LEFT, NO, IN_PROGRESS };
 
 class State {
    public:
@@ -14,8 +14,8 @@ class State {
     double distanceFront;
     double distanceSide;
     double distanceHall;
-    double angle;
-    double referenceAngle;
+    double yaw;
+    double yawReference;
     double t;
 
     float dt;
@@ -23,12 +23,12 @@ class State {
     float current_mA;
 
     Correction correction = Correction::NO;
-    Direction direction = Direction::STOP;
+    uint8_t previousDirection = Direction::STOP;
 
     inline String getStr() {
         return "vol:" + String(busVoltage) + ",cur:" + String(current_mA) +
                ",df:" + String(distanceFront) + ",ds:" + String(distanceSide) +
-               ",ang:" + String(angle) + ",t:" + String(t) +
+               ",ang:" + String(yaw) + ",t:" + String(t) +
                ",dh:" + String(distanceHall);
     }
 };

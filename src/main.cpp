@@ -20,10 +20,6 @@ INA219_WE ina;
 MPU6050 mpu;
 WheelControl wheels;
 
-SemaphoreHandle_t xCorrectSemaphore;
-QueueHandle_t xCorrectDirectionQueue;
-TaskHandle_t wallFollowTaskHandle;
-
 State state;
 
 void IRAM_ATTR hallSensorISR();
@@ -85,19 +81,15 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
         ESP_LOGI(mainLogTag, "Machine started");
         state.handleMode = false;
         state.autoMode = true;
-        if (wallFollowTaskHandle != NULL) {
-            state.referenceAngle = state.angle;
-            wheels.forward(true);
-            // vTaskResume(wallFollowTaskHandle);
-        }
+        state.yawReference = state.yaw;
+        wheels.forward(true);
+        
     } else if (message.data() == "stop") {
         ESP_LOGI(mainLogTag, "Machine stopped");
         state.handleMode = false;
         state.autoMode = false;
-        if (wallFollowTaskHandle != NULL) {
-            // vTaskSuspend(wallFollowTaskHandle);
-            wheels.stop();
-        }
+        wheels.stop();
+
     } else if (message.data() == "suspend") {
         ESP_LOGI(mainLogTag, "Machine suspended");
     } else if (message.data() == "resume") {
@@ -145,18 +137,24 @@ void connectToWifi() {
 }
 
 void IRAM_ATTR hallSensorISR() {
+    static double tInterrupt = 0.0;
     ESP_LOGI(mainLogTag, "Interrupt by Hall");
-    state.direction = wheels.direction;
-    if (wheels.direction == Direction::LEFT or
-        wheels.direction == Direction::RIGHT)
-        return;
 
-    unsigned long currentTime = millis();
-    if (currentTime - lastInterruptTime <= 1000) return;
-    lastInterruptTime = currentTime;
-    if (lastDirection == Direction::LEFT or
-        lastDirection == Direction::RIGHT)
+    if (wheels.direction == Direction::LEFT or
+        wheels.direction == Direction::RIGHT) {
+        state.previousDirection = wheels.direction;
         return;
+    }
+
+    if (state.t - tInterrupt <= 1.0) return;
+    tInterrupt = state.t;
+    // The robot's going straight
+    if (state.previousDirection == Direction::LEFT or
+        state.previousDirection == Direction::RIGHT) {
+        state.previousDirection = wheels.direction;
+        return;
+    }
+
     if (wheels.direction == Direction::FORWARD)
         state.distanceHall += WHEEL_DISTANCE_MM;
     else if (wheels.direction == Direction::BACKWARD)
@@ -181,28 +179,80 @@ void loopCore0(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-void handleCorrection() {
-    bool toRight;
-    const bool enableSmooth = false;
+void updateDistances() {
+    static KalmanFilter kalmanFront;
+    static KalmanFilter kalmanSide;
+    static float distanceTime = 0.0;
+    distanceTime += state.dt;
+    if (distanceTime <= 0.1f) return;
 
-    if (xQueueReceive(xCorrectDirectionQueue, &toRight, 0) == pdTRUE) {
-        ESP_LOGD(mainLogTag, "Correction to right=%s",
-                 toRight ? "true" : "false");
-        wheels.correction(toRight);
-        vTaskDelay(pdMS_TO_TICKS(300));
+    distanceTime = 0.0f;
+    double *distances = HCSR04.measureDistanceMm();
+    if (distances[0] != -1)
+        state.distanceFront = kalmanFront.update(distances[0]);
+    else
+        state.distanceFront = distances[0];
+    if (distances[1] != -1)
+        state.distanceSide = kalmanSide.update(distances[1]);
+    else
+        state.distanceSide = distances[1];
+
+    return;
+}
+
+void handleCorrection() {
+    static const bool enableSmooth = false;
+    static float correctionTime = 0.0;
+    if (state.correction == Correction::TO_LEFT)
+        wheels.correction(false);
+    else if (state.correction == Correction::TO_RIGHT)
+        wheels.correction(true);
+    else if (state.correction == Correction::IN_PROGRESS) {
+        correctionTime += state.dt;
+        if (correctionTime <= 0.3f) return;
         wheels.forward(enableSmooth);
-        isCorrecting = false;
+        state.correction = Correction::NO;
+        correctionTime = 0.0f;
     }
+    return;
 }
 
 void step() {
     double now = micros() / 1000000.0;
-    state.dt = now - state.t;
+    state.dt = static_cast<float>(now - state.t);
     state.t = now;
 
     if (!(state.dt > 0)) {
         state.dt = 0;
     }
+}
+
+void calibrateGyroOnce() {
+    static float stopTime = 0.0f;
+    stopTime = wheels.direction == Direction::STOP ? stopTime + state.dt : 0.0f;
+    if (stopTime < 2.0f) return;
+
+    mpu.CalibrateGyro(1);
+}
+
+void updateYaw() {
+    static int16_t ax, ay, az, gx, gy, gz;
+    static double yaw = 0.0;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+    yaw += static_cast<double>(gz) * state.dt / GYRO_SENSITIVITY;
+    state.yaw = fmod(yaw, 360.0);
+    if (state.yaw < 0) state.yaw += 360.0;
+
+    calibrateGyroOnce();
+
+    if (state.handleMode || state.correction != Correction::IN_PROGRESS ||
+        wheels.direction != Direction::FORWARD ||
+        fabs(state.yawReference - state.yaw) <= 2.0)
+        return;
+
+    state.correction = state.yawReference < state.yaw ? Correction::TO_RIGHT
+                                                      : Correction::TO_LEFT;
 }
 
 void loopCore1(void *pvParameters) {
@@ -211,8 +261,7 @@ void loopCore1(void *pvParameters) {
         updateYaw();
         handleCorrection();
         updateDistances();
-        computeLoopRate();
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
