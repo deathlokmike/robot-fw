@@ -1,5 +1,8 @@
 #include "WheelControl.h"
 
+#include "Globals.h"
+#include "esp_log.h"
+
 WheelControl::WheelControl() {};
 
 void WheelControl::attach(uint8_t in1_, uint8_t in2_, uint8_t in3_,
@@ -71,6 +74,7 @@ void WheelControl::right() {
 }
 
 void WheelControl::correction(bool toRight) {
+    ESP_LOGD(mainLogTag, "Correction to right=%s", toRight ? "true" : "false");
     analogWrite(in2, toRight ? direction : Direction::CORRECTION);
     analogWrite(in4, toRight ? Direction::CORRECTION : direction);
 }

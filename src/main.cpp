@@ -83,7 +83,7 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
         state.autoMode = true;
         state.yawReference = state.yaw;
         wheels.forward(true);
-        
+
     } else if (message.data() == "stop") {
         ESP_LOGI(mainLogTag, "Machine stopped");
         state.handleMode = false;
@@ -203,11 +203,14 @@ void updateDistances() {
 void handleCorrection() {
     static const bool enableSmooth = false;
     static float correctionTime = 0.0;
-    if (state.correction == Correction::TO_LEFT)
+    if (state.correction == Correction::TO_LEFT) {
         wheels.correction(false);
-    else if (state.correction == Correction::TO_RIGHT)
+        state.correction = Correction::IN_PROGRESS;
+    } else if (state.correction == Correction::TO_RIGHT) {
         wheels.correction(true);
-    else if (state.correction == Correction::IN_PROGRESS) {
+        state.correction = Correction::IN_PROGRESS;
+    } else if (state.correction == Correction::IN_PROGRESS) {
+        ESP_LOGI(mainLogTag, "correction time: %f", correctionTime);
         correctionTime += state.dt;
         if (correctionTime <= 0.3f) return;
         wheels.forward(enableSmooth);
@@ -231,7 +234,7 @@ void calibrateGyroOnce() {
     static float stopTime = 0.0f;
     stopTime = wheels.direction == Direction::STOP ? stopTime + state.dt : 0.0f;
     if (stopTime < 2.0f) return;
-
+    ESP_LOGD(mainLogTag, "Callibrate gyro");
     mpu.CalibrateGyro(1);
 }
 
@@ -246,11 +249,11 @@ void updateYaw() {
 
     calibrateGyroOnce();
 
-    if (state.handleMode || state.correction != Correction::IN_PROGRESS ||
+    if (state.handleMode || state.correction == Correction::IN_PROGRESS ||
         wheels.direction != Direction::FORWARD ||
         fabs(state.yawReference - state.yaw) <= 2.0)
         return;
-
+    ESP_LOGI(mainLogTag, "Start correction");
     state.correction = state.yawReference < state.yaw ? Correction::TO_RIGHT
                                                       : Correction::TO_LEFT;
 }
