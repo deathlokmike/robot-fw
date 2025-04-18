@@ -49,7 +49,7 @@ void setup() {
 
     mpu.initialize();
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
-    ESP_LOGI(mainLogTag, "Calibrate MPU (20)");
+    ESP_LOGI(mainLogTag, "Calibrate MPU");
     mpu.CalibrateGyro(20);
     mpu.CalibrateAccel(5);
     ESP_LOGI(mainLogTag, "MPU6050: Successful");
@@ -60,7 +60,7 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(HALL_SENSOR), hallSensorISR, FALLING);
 
     xTaskCreatePinnedToCore(loopCore0, "lc0", 8192, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(loopCore1, "yaw", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(loopCore1, "lc1", 8192, NULL, 1, NULL, 1);
 }
 
 void onEventsCallback(websockets::WebsocketsEvent event, String data) {
@@ -146,8 +146,8 @@ void IRAM_ATTR hallSensorISR() {
         return;
     }
 
-    if (state.t - tInterrupt <= 1.0) return;
-    tInterrupt = state.t;
+    if (state.t_loop1 - tInterrupt <= 1.0) return;
+    tInterrupt = state.t_loop1;
     // The robot's going straight
     if (state.previousDirection == Direction::LEFT or
         state.previousDirection == Direction::RIGHT) {
@@ -161,20 +161,35 @@ void IRAM_ATTR hallSensorISR() {
         state.distanceHall -= WHEEL_DISTANCE_MM;
 }
 
+void stepLoop0() {
+    double now = micros() / 1000000.0;
+    state.dt_loop0 = static_cast<float>(now - state.t_loop0);
+    state.t_loop0 = now;
+
+    if (!(state.dt_loop0 > 0)) {
+        state.dt_loop0 = 0;
+    }
+}
+
+void pollAndSendData() {
+    static float sendTime = 0.0;
+    if (wsClient.available()) {
+        wsClient.poll();
+        sendTime += state.dt_loop0;
+        if (sendTime <= 1.0f) return;
+
+        String data = state.getStr();
+        wsClient.send(data);
+        state.distanceHall = 0;
+        sendTime = 0.0f;
+    }
+}
+
 void loopCore0(void *pvParameters) {
-    long previousTime = 0;
     while (true) {
-        long currentTime = millis();
-        if (wsClient.available()) {
-            wsClient.poll();
-            if (state.distanceHall != 0 or millis() - previousTime > 1000) {
-                String data = state.getStr();
-                wsClient.send(data);
-                previousTime = millis();
-                state.distanceHall = 0;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        stepLoop0();
+        pollAndSendData();
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
     vTaskDelete(NULL);
 }
@@ -183,7 +198,7 @@ void updateDistances() {
     static KalmanFilter kalmanFront;
     static KalmanFilter kalmanSide;
     static float distanceTime = 0.0;
-    distanceTime += state.dt;
+    distanceTime += state.dt_loop1;
     if (distanceTime <= 0.1f) return;
 
     distanceTime = 0.0f;
@@ -211,7 +226,7 @@ void handleCorrection() {
         state.correction = Correction::IN_PROGRESS;
     } else if (state.correction == Correction::IN_PROGRESS) {
         ESP_LOGI(mainLogTag, "correction time: %f", correctionTime);
-        correctionTime += state.dt;
+        correctionTime += state.dt_loop1;
         if (correctionTime <= 0.3f) return;
         wheels.forward(enableSmooth);
         state.correction = Correction::NO;
@@ -220,19 +235,20 @@ void handleCorrection() {
     return;
 }
 
-void step() {
+void stepLoop1() {
     double now = micros() / 1000000.0;
-    state.dt = static_cast<float>(now - state.t);
-    state.t = now;
+    state.dt_loop1 = static_cast<float>(now - state.t_loop1);
+    state.t_loop1 = now;
 
-    if (!(state.dt > 0)) {
-        state.dt = 0;
+    if (!(state.dt_loop1 > 0)) {
+        state.dt_loop1 = 0;
     }
 }
 
 void calibrateGyroOnce() {
     static float stopTime = 0.0f;
-    stopTime = wheels.direction == Direction::STOP ? stopTime + state.dt : 0.0f;
+    stopTime =
+        wheels.direction == Direction::STOP ? stopTime + state.dt_loop1 : 0.0f;
     if (stopTime < 2.0f) return;
     ESP_LOGD(mainLogTag, "Callibrate gyro");
     mpu.CalibrateGyro(1);
@@ -243,7 +259,7 @@ void updateYaw() {
     static double yaw = 0.0;
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
-    yaw += static_cast<double>(gz) * state.dt / GYRO_SENSITIVITY;
+    yaw += static_cast<double>(gz) * state.dt_loop1 / GYRO_SENSITIVITY;
     state.yaw = fmod(yaw, 360.0);
     if (state.yaw < 0) state.yaw += 360.0;
 
@@ -260,12 +276,13 @@ void updateYaw() {
 
 void loopCore1(void *pvParameters) {
     while (true) {
-        step();
+        stepLoop1();
         updateYaw();
         handleCorrection();
         updateDistances();
         vTaskDelay(pdMS_TO_TICKS(1));
     }
+    vTaskDelete(NULL);
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }

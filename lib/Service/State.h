@@ -16,19 +16,21 @@ class State {
     double distanceHall;
     double yaw;
     double yawReference;
-    double t;
+    double t_loop0;
+    double t_loop1;
 
-    float dt;
-    float busVoltage;
-    float current_mA;
+    float dt_loop0;
+    float dt_loop1;
+    float voltage;
+    float current;
 
     Correction correction = Correction::NO;
     uint8_t previousDirection = Direction::STOP;
 
     inline String getStr() {
-        return "vol:" + String(busVoltage) + ",cur:" + String(current_mA) +
+        return "vol:" + String(voltage) + ",cur:" + String(current) +
                ",df:" + String(distanceFront) + ",ds:" + String(distanceSide) +
-               ",ang:" + String(yaw) + ",t:" + String(t) +
+               ",ang:" + String(yaw) + ",t:" + String(t_loop1) +
                ",dh:" + String(distanceHall);
     }
 };
