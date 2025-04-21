@@ -1,3 +1,5 @@
+#define CAMERA_ENABLED 0
+
 #include <ArduinoWebsockets.h>
 #include <HCSR04.h>
 #include <INA219_WE.h>
@@ -11,10 +13,16 @@
 #include "Config.h"
 #include "Globals.h"
 #include "KalmanFilter.h"
+#include "OV7670.h"
 #include "WheelControl.h"
 #include "esp_log.h"
 
 websockets::WebsocketsClient wsClient;
+
+#if CAMERA_ENABLED
+HTTPClient client;
+OV7670 camera;
+#endif
 
 INA219_WE ina;
 MPU6050 mpu;
@@ -58,6 +66,18 @@ void setup() {
     HCSR04.begin(TRIG, echoPins, 2);
     pinMode(HALL_SENSOR, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(HALL_SENSOR), hallSensorISR, FALLING);
+
+#if CAMERA_ENABLED
+    if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK) {
+        ESP_LOGE(mainLogTag, "Failed to install ISR service");
+    }
+    if (!camera.init(CAM_VSYNC, CAM_HREF, CAM_XCLK, CAM_PCLK, CAM_D0, CAM_D1,
+                     CAM_D2, CAM_D3, CAM_D4, CAM_D5, CAM_D6, CAM_D7)) {
+        ESP_LOGE(mainLogTag, "Camera initialization failed!");
+        return;
+    }
+    ESP_LOGI(mainLogTag, "Camera: Successful");
+#endif
 
     xTaskCreatePinnedToCore(loopCore0, "lc0", 8192, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(loopCore1, "lc1", 8192, NULL, 1, NULL, 1);
@@ -182,13 +202,34 @@ void pollAndSendData() {
         wsClient.send(data);
         state.distanceHall = 0;
         sendTime = 0.0f;
+    } else {
+        ESP_LOGW(mainLogTag, "WS client is not available");
     }
 }
+
+#if CAMERA_ENABLED
+void takeImageAndSendPostRequest() {
+    camera.oneFrame();
+    client.begin(endpoint);
+    int httpResponseCode =
+        client.sendRequest("POST", camera.frame, camera.frameBytes);
+    if (httpResponseCode > 0) {
+        String payload = client.getString();
+        ESP_LOGI(mainLogTag, "HTTP: [%d] %s", httpResponseCode, payload);
+    } else {
+        ESP_LOGW(mainLogTag, "HTTP-response error");
+    }
+    client.end();
+}
+#endif
 
 void loopCore0(void *pvParameters) {
     while (true) {
         stepLoop0();
         pollAndSendData();
+#if CAMERA_ENABLED
+        takeImageAndSendPostRequest();
+#endif
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     vTaskDelete(NULL);
@@ -274,12 +315,18 @@ void updateYaw() {
                                                       : Correction::TO_LEFT;
 }
 
+void updateVoltageAndCurrent() {
+    state.voltage = ina.getBusVoltage_V();
+    state.current = ina.getCurrent_mA();
+}
+
 void loopCore1(void *pvParameters) {
     while (true) {
         stepLoop1();
         updateYaw();
         handleCorrection();
         updateDistances();
+        updateVoltageAndCurrent();
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     vTaskDelete(NULL);

@@ -34,15 +34,12 @@ void IRAM_ATTR I2SCamera::i2sInterrupt(void *arg) {
             stopSignal = false;
         }
     }
-    //    i2sStop();
 }
 
 void IRAM_ATTR I2SCamera::vSyncInterrupt(void *arg) {
     GPIO.status1_w1tc.val = GPIO.status1.val;
     GPIO.status_w1tc = GPIO.status;
-    if (gpio_get_level(vSyncPin)) {
-        // frame done
-    }
+    gpio_get_level(vSyncPin);
 }
 
 void I2SCamera::i2sStop() {
@@ -80,10 +77,6 @@ bool I2SCamera::initVSync(int pin) {
     vSyncPin = (gpio_num_t)pin;
     gpio_set_intr_type(vSyncPin, GPIO_INTR_POSEDGE);
     gpio_intr_enable(vSyncPin);
-    if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK) {
-        ESP_LOGE(cameraLogTag, "Failed to install ISR service");
-        return false;
-    }
 
     if (gpio_isr_handler_add(vSyncPin, vSyncInterrupt,
                              (void *)"vSyncInterrupt") != ESP_OK) {

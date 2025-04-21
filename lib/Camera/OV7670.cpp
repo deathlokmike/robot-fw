@@ -58,26 +58,18 @@ bool OV7670::QQVGA() {
         {REG_SCALING_DCWCTR, 0x22},
         // pixel clock divided by 4
         {REG_SCALING_PCLK_DIV, 0xf2},
-        {REG_SCALING_PCLK_DELAY, 0x02}};
+        {REG_SCALING_PCLK_DELAY, 0x02},
+        {REG_COM8,
+         COM8_FASTAEC | COM8_AECSTEP | COM8_BFILT | COM8_AGC | COM8_AWB}};
+
     return writeRegisters(regValues, 7);
 }
 
 bool OV7670::saturation() {
     // color matrix values
     const RegisterValue regValues[] = {
-        {0xb0, 0x84},
-        {0x4f, 0x80},
-        {0x50, 0x80},
-        {0x51, 0x00},
-        {0x52, 0x22},
-        {0x53, 0x5e},
-        {0x54, 0x80},
-        // matrix signs
-        {0x58, 0x9e},
-        // AWB on
-        {0x13, 0xe7},
-        // Simple AWB
-        {0x6f, 0x9f},
+        {0x4f, 0x80}, {0x50, 0x80}, {0x51, 0x00}, {0x52, 0x22},
+        {0x53, 0x22}, {0x54, 0x22}, {0x58, 0x9e},
     };
     return writeRegisters(regValues, 10);
 }
