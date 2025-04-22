@@ -25,10 +25,10 @@ OV7670 camera;
 #endif
 
 INA219_WE ina;
-MPU6050 mpu;
+MPU6050 imu;
 WheelControl wheels;
 
-State state;
+Navo navo;
 
 void IRAM_ATTR hallSensorISR();
 void loopCore0(void *pvParameters);
@@ -55,11 +55,11 @@ void setup() {
     connectToWifi();
     connectToServer();
 
-    mpu.initialize();
-    mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+    imu.initialize();
+    imu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
     ESP_LOGI(mainLogTag, "Calibrate MPU");
-    mpu.CalibrateGyro(20);
-    mpu.CalibrateAccel(5);
+    imu.CalibrateGyro(20);
+    imu.CalibrateAccel(5);
     ESP_LOGI(mainLogTag, "MPU6050: Successful");
 
     byte *echoPins = new byte[2]{FRONT_ECHO, SIDE_ECHO};
@@ -99,36 +99,32 @@ void onEventsCallback(websockets::WebsocketsEvent event, String data) {
 void onMessageCallback(websockets::WebsocketsMessage message) {
     if (message.data() == "start") {
         ESP_LOGI(mainLogTag, "Machine started");
-        state.handleMode = false;
-        state.autoMode = true;
-        state.yawReference = state.yaw;
-        wheels.forward(true);
-
+        navo.autoMode = AutoMode::ENABLE;
     } else if (message.data() == "stop") {
         ESP_LOGI(mainLogTag, "Machine stopped");
-        state.handleMode = false;
-        state.autoMode = false;
-        wheels.stop();
-
+        navo.autoMode = AutoMode::DISABLE;
     } else if (message.data() == "suspend") {
         ESP_LOGI(mainLogTag, "Machine suspended");
+        navo.autoMode = AutoMode::SUSPEND;
     } else if (message.data() == "resume") {
         ESP_LOGI(mainLogTag, "Machine resumed");
+        navo.autoMode = AutoMode::ACTIVE;
     } else if (message.data() == "remote_forward") {
-        state.handleMode = true;
+        navo.autoMode = AutoMode::MANUAL;
         wheels.forward(true);
     } else if (message.data() == "remote_backward") {
-        state.handleMode = true;
+        navo.autoMode = AutoMode::MANUAL;
         wheels.backward();
     } else if (message.data() == "remote_left") {
-        state.handleMode = true;
+        navo.autoMode = AutoMode::MANUAL;
         wheels.left();
     } else if (message.data() == "remote_right") {
-        state.handleMode = true;
+        navo.autoMode = AutoMode::MANUAL;
         wheels.right();
     } else if (message.data() == "remote_stop") {
-        state.handleMode = true;
+        navo.autoMode = AutoMode::MANUAL;
         wheels.stop();
+        navo.autoMode = AutoMode::DISABLE;
     }
 }
 
@@ -162,32 +158,32 @@ void IRAM_ATTR hallSensorISR() {
 
     if (wheels.direction == Direction::LEFT or
         wheels.direction == Direction::RIGHT) {
-        state.previousDirection = wheels.direction;
+        navo.previousDirection = wheels.direction;
         return;
     }
 
-    if (state.t_loop1 - tInterrupt <= 1.0) return;
-    tInterrupt = state.t_loop1;
+    if (navo.t_loop1 - tInterrupt <= 1.0) return;
+    tInterrupt = navo.t_loop1;
     // The robot's going straight
-    if (state.previousDirection == Direction::LEFT or
-        state.previousDirection == Direction::RIGHT) {
-        state.previousDirection = wheels.direction;
+    if (navo.previousDirection == Direction::LEFT or
+        navo.previousDirection == Direction::RIGHT) {
+        navo.previousDirection = wheels.direction;
         return;
     }
 
     if (wheels.direction == Direction::FORWARD)
-        state.distanceHall += WHEEL_DISTANCE_MM;
+        navo.distanceHall += WHEEL_DISTANCE_MM;
     else if (wheels.direction == Direction::BACKWARD)
-        state.distanceHall -= WHEEL_DISTANCE_MM;
+        navo.distanceHall -= WHEEL_DISTANCE_MM;
 }
 
 void stepLoop0() {
     double now = micros() / 1000000.0;
-    state.dt_loop0 = static_cast<float>(now - state.t_loop0);
-    state.t_loop0 = now;
+    navo.dt_loop0 = static_cast<float>(now - navo.t_loop0);
+    navo.t_loop0 = now;
 
-    if (!(state.dt_loop0 > 0)) {
-        state.dt_loop0 = 0;
+    if (!(navo.dt_loop0 > 0)) {
+        navo.dt_loop0 = 0;
     }
 }
 
@@ -195,12 +191,12 @@ void pollAndSendData() {
     static float sendTime = 0.0;
     if (wsClient.available()) {
         wsClient.poll();
-        sendTime += state.dt_loop0;
+        sendTime += navo.dt_loop0;
         if (sendTime <= 1.0f) return;
 
-        String data = state.getStr();
+        String data = navo.getStr();
         wsClient.send(data);
-        state.distanceHall = 0;
+        navo.distanceHall = 0;
         sendTime = 0.0f;
     } else {
         ESP_LOGW(mainLogTag, "WS client is not available");
@@ -239,93 +235,111 @@ void updateDistances() {
     static KalmanFilter kalmanFront;
     static KalmanFilter kalmanSide;
     static float distanceTime = 0.0;
-    distanceTime += state.dt_loop1;
+    distanceTime += navo.dt_loop1;
     if (distanceTime <= 0.1f) return;
 
     distanceTime = 0.0f;
     double *distances = HCSR04.measureDistanceMm();
     if (distances[0] != -1)
-        state.distanceFront = kalmanFront.update(distances[0]);
+        navo.distanceFront = kalmanFront.update(distances[0]);
     else
-        state.distanceFront = distances[0];
+        navo.distanceFront = distances[0];
     if (distances[1] != -1)
-        state.distanceSide = kalmanSide.update(distances[1]);
+        navo.distanceSide = kalmanSide.update(distances[1]);
     else
-        state.distanceSide = distances[1];
+        navo.distanceSide = distances[1];
 
     return;
 }
 
-void handleCorrection() {
+void doCorrection() {
     static const bool enableSmooth = false;
     static float correctionTime = 0.0;
-    if (state.correction == Correction::TO_LEFT) {
+    if (navo.correction == Correction::NO)
+        return;
+    else if (navo.correction == Correction::TO_LEFT) {
         wheels.correction(false);
-        state.correction = Correction::IN_PROGRESS;
-    } else if (state.correction == Correction::TO_RIGHT) {
+        navo.correction = Correction::IN_PROGRESS;
+    } else if (navo.correction == Correction::TO_RIGHT) {
         wheels.correction(true);
-        state.correction = Correction::IN_PROGRESS;
-    } else if (state.correction == Correction::IN_PROGRESS) {
-        ESP_LOGI(mainLogTag, "correction time: %f", correctionTime);
-        correctionTime += state.dt_loop1;
-        if (correctionTime <= 0.3f) return;
+        navo.correction = Correction::IN_PROGRESS;
+    } else {
+        ESP_LOGD(mainLogTag, "correction time: %f", correctionTime);
+        correctionTime += navo.dt_loop1;
+        if (correctionTime <= 0.2f) return;
         wheels.forward(enableSmooth);
-        state.correction = Correction::NO;
+        navo.correction = Correction::NO;
         correctionTime = 0.0f;
     }
-    return;
 }
 
 void stepLoop1() {
     double now = micros() / 1000000.0;
-    state.dt_loop1 = static_cast<float>(now - state.t_loop1);
-    state.t_loop1 = now;
+    navo.dt_loop1 = static_cast<float>(now - navo.t_loop1);
+    navo.t_loop1 = now;
 
-    if (!(state.dt_loop1 > 0)) {
-        state.dt_loop1 = 0;
+    if (!(navo.dt_loop1 > 0)) {
+        navo.dt_loop1 = 0;
     }
 }
 
 void calibrateGyroOnce() {
     static float stopTime = 0.0f;
     stopTime =
-        wheels.direction == Direction::STOP ? stopTime + state.dt_loop1 : 0.0f;
+        wheels.direction == Direction::STOP ? stopTime + navo.dt_loop1 : 0.0f;
     if (stopTime < 2.0f) return;
     ESP_LOGD(mainLogTag, "Callibrate gyro");
-    mpu.CalibrateGyro(1);
+    imu.CalibrateGyro(1);
 }
 
 void updateYaw() {
-    static int16_t ax, ay, az, gx, gy, gz;
+    static int16_t gz;
     static double yaw = 0.0;
-    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    static double tmp = 0.0;
+    gz = imu.getRotationZ();
 
-    yaw += static_cast<double>(gz) * state.dt_loop1 / GYRO_SENSITIVITY;
-    state.yaw = fmod(yaw, 360.0);
-    if (state.yaw < 0) state.yaw += 360.0;
+    yaw += static_cast<double>(gz) * navo.dt_loop1 / GYRO_SENSITIVITY;
+    tmp = fmod(yaw, 360.0);
+    navo.yaw = tmp < 0 ? tmp += 360.0 : tmp;
+    ESP_LOGD(mainLogTag, "yaw: %f, tmp: %f", navo.yaw, tmp);
+    // calibrateGyroOnce();
 
-    calibrateGyroOnce();
-
-    if (state.handleMode || state.correction == Correction::IN_PROGRESS ||
+    if (navo.autoMode != AutoMode::ACTIVE ||
+        navo.correction == Correction::IN_PROGRESS ||
         wheels.direction != Direction::FORWARD ||
-        fabs(state.yawReference - state.yaw) <= 2.0)
+        fabs(navo.yawReference - navo.yaw) <= 1.5)
         return;
-    ESP_LOGI(mainLogTag, "Start correction");
-    state.correction = state.yawReference < state.yaw ? Correction::TO_RIGHT
-                                                      : Correction::TO_LEFT;
+    ESP_LOGI(mainLogTag, "Start correction, diff: %f",
+             navo.yawReference - navo.yaw);
+    navo.correction = navo.yawReference < navo.yaw ? Correction::TO_RIGHT
+                                                   : Correction::TO_LEFT;
 }
 
 void updateVoltageAndCurrent() {
-    state.voltage = ina.getBusVoltage_V();
-    state.current = ina.getCurrent_mA();
+    navo.voltage = ina.getBusVoltage_V();
+    navo.current = ina.getCurrent_mA();
+}
+
+void autoMode() {
+    if (navo.autoMode == AutoMode::ENABLE) {
+        wheels.forward(true);
+        navo.yawReference = navo.yaw;
+        navo.autoMode = AutoMode::ACTIVE;
+    } else if (navo.autoMode == AutoMode::DISABLE or
+               navo.autoMode == AutoMode::SUSPEND) {
+        wheels.stop();
+    }
+    if (navo.autoMode == AutoMode::ACTIVE) {
+        doCorrection();
+    }
 }
 
 void loopCore1(void *pvParameters) {
     while (true) {
         stepLoop1();
         updateYaw();
-        handleCorrection();
         updateDistances();
+        autoMode();
         updateVoltageAndCurrent();
         vTaskDelay(pdMS_TO_TICKS(1));
     }
