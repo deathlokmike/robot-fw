@@ -40,7 +40,6 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
 }
 
 void WheelControl::forward(bool enableSmoothStart) {
-    if (direction == Direction::FORWARD) return;
     analogWrite(in1, 0);
     analogWrite(in3, 0);
     direction = Direction::FORWARD;
@@ -77,7 +76,7 @@ void WheelControl::right() {
 }
 
 void WheelControl::correction(bool toRight) {
-    ESP_LOGD(mainLogTag, "Correction to right=%s", toRight ? "true" : "false");
+    ESP_LOGI(mainLogTag, "Correction to right=%s", toRight ? "true" : "false");
     analogWrite(in2, toRight ? direction : Direction::CORRECTION);
     analogWrite(in4, toRight ? Direction::CORRECTION : direction);
 }

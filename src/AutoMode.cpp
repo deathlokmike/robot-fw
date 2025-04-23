@@ -4,27 +4,22 @@
 
 void performYawCorrection() {
     static const bool enableSmooth = false;
-    static float correctionTime = 0.0;
 
     if (navo.correction == Correction::NO and
-        fabs(navo.yawReference - navo.yaw) >= 1.5) {
-        ESP_LOGI(mainLogTag, "Start correction, diff: %f",
-                 navo.yawReference - navo.yaw);
-        navo.correction = navo.yawReference < navo.yaw ? Correction::TO_RIGHT
-                                                       : Correction::TO_LEFT;
-    } else if (navo.correction == Correction::TO_LEFT) {
-        navo.wheels.correction(false);
-        navo.correction = Correction::IN_PROGRESS;
+        navo.yaw - navo.yawReference >= 2.0) {
+        ESP_LOGD(mainLogTag, "Start correction, yaw: %f, yawRef: %f", navo.yaw,
+                 navo.yawReference);
+        navo.correction = Correction::TO_RIGHT;
     } else if (navo.correction == Correction::TO_RIGHT) {
         navo.wheels.correction(true);
         navo.correction = Correction::IN_PROGRESS;
-    } else {
-        ESP_LOGD(mainLogTag, "correction time: %f", correctionTime);
-        correctionTime += navo.dt_loop1;
-        if (correctionTime <= 0.2f) return;
-        navo.wheels.forward(enableSmooth);
-        navo.correction = Correction::NO;
-        correctionTime = 0.0f;
+    } else if (navo.correction == Correction::IN_PROGRESS) {
+        ESP_LOGD(mainLogTag, "yaw: %f", navo.yaw);
+        if (navo.yaw - navo.yawReference <= 0.5) {
+            navo.wheels.forward(enableSmooth);
+            navo.correction = Correction::NO;
+            ESP_LOGI(mainLogTag, "STOP CORRECTION");
+        }
     }
 }
 

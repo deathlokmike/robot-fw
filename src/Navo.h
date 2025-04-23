@@ -3,7 +3,7 @@
 #include "Config.h"
 #include "WheelControl.h"
 
-enum Correction : uint8_t { TO_RIGHT, TO_LEFT, NO, IN_PROGRESS };
+enum Correction : uint8_t { TO_RIGHT, NO, IN_PROGRESS };
 
 enum AutoMode : uint8_t { ENABLE, ACTIVE, DISABLE, SUSPEND, MANUAL };
 
