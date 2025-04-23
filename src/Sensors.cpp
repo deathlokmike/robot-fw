@@ -5,10 +5,14 @@
 #include <MPU6050.h>
 
 #include "KalmanFilter.h"
+#include "LowPassFilter.h"
 #include "Navo.h"
 
 INA219_WE ina;
 MPU6050 imu;
+
+int16_t gyroZ;
+int16_t gyroZBias = 0;
 
 void IRAM_ATTR hallSensorISR() {
     static double tInterrupt = 0.0;
@@ -88,25 +92,26 @@ void updateDistances() {
     return;
 }
 
+// Copyright (c) 2023 Oleg Kalachev <okalachev@gmail.com>
+// Repository: https://github.com/okalachev/flix
 void calibrateGyroOnce() {
     static float stopTime = 0.0f;
     stopTime = navo.wheels.direction == Direction::STOP
                    ? stopTime + navo.dt_loop1
                    : 0.0f;
     if (stopTime < 2.0f) return;
-    ESP_LOGD(mainLogTag, "Callibrate gyro");
-    imu.CalibrateGyro(1);
+    ESP_LOGV(mainLogTag, "Callibrate gyro");
+    static LowPassFilter<int16_t> gyroZBiasFilter(0.01);
+    gyroZBias = gyroZBiasFilter.update(gyroZ);
 }
 
 void updateYaw() {
-    static int16_t gz;
     static double yaw = 0.0;
     static double tmp = 0.0;
-    gz = imu.getRotationZ();
+    gyroZ = imu.getRotationZ() - gyroZBias;
 
-    yaw += static_cast<double>(gz) * navo.dt_loop1 / GYRO_SENSITIVITY;
+    yaw += static_cast<double>(gyroZ) * navo.dt_loop1 / GYRO_SENSITIVITY;
     tmp = fmod(yaw, 360.0);
     navo.yaw = tmp < 0 ? tmp += 360.0 : tmp;
-    ESP_LOGD(mainLogTag, "yaw: %f, tmp: %f", navo.yaw, tmp);
-    // calibrateGyroOnce();
+    calibrateGyroOnce();
 }
