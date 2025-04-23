@@ -1,6 +1,6 @@
 #pragma once
-#include <Arduino.h>
 
+#include "Config.h"
 #include "WheelControl.h"
 
 enum Correction : uint8_t { TO_RIGHT, TO_LEFT, NO, IN_PROGRESS };
@@ -28,6 +28,13 @@ class Navo {
     uint8_t correction = Correction::NO;
     uint8_t previousDirection = Direction::STOP;
 
+    WheelControl wheels = WheelControl();
+
+    Navo() {
+        wheels.attach(IN1, IN2, IN3, IN4);
+        wheels.stop();
+    }
+
     inline String getStr() {
         return "vol:" + String(voltage) + ",cur:" + String(current) +
                ",df:" + String(distanceFront) + ",ds:" + String(distanceSide) +
@@ -35,3 +42,5 @@ class Navo {
                ",dh:" + String(distanceHall);
     }
 };
+
+extern Navo navo;

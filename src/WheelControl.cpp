@@ -1,8 +1,7 @@
 #include "WheelControl.h"
 
-#include "Globals.h"
+#include "Config.h"
 #include "esp_log.h"
-
 WheelControl::WheelControl() {};
 
 void WheelControl::attach(uint8_t in1_, uint8_t in2_, uint8_t in3_,

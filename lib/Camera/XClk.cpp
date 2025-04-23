@@ -1,9 +1,10 @@
 #include "XClk.h"
 
 #include "driver/ledc.h"
+#include "esp_log.h"
 
 bool ClockEnable(int pin, int hz) {
-    ESP_LOGD(cameraLogTag, "Started clock enable");
+    ESP_LOGD("Camera", "Started clock enable");
     periph_module_enable(PERIPH_LEDC_MODULE);
 
     ledc_timer_config_t timer_conf;
@@ -15,7 +16,7 @@ bool ClockEnable(int pin, int hz) {
     esp_err_t err = ledc_timer_config(&timer_conf);
 
     if (err != ESP_OK) {
-        ESP_LOGE(cameraLogTag, "Failed to configure LEDC timer: %s",
+        ESP_LOGE("Camera", "Failed to configure LEDC timer: %s",
                  esp_err_to_name(err));
         return false;
     }
@@ -31,11 +32,11 @@ bool ClockEnable(int pin, int hz) {
     err = ledc_channel_config(&ch_conf);
 
     if (err != ESP_OK) {
-        ESP_LOGE(cameraLogTag, "Failed to configure LEDC channel: %s",
+        ESP_LOGE("Camera", "Failed to configure LEDC channel: %s",
                  esp_err_to_name(err));
         return false;
     }
-    ESP_LOGD(cameraLogTag, "Clock done");
+    ESP_LOGD("Camera", "Clock done");
     return true;
 }
 

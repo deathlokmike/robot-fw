@@ -1,5 +1,7 @@
 #include "I2SCamera.h"
 
+#include "esp_log.h"
+
 int I2SCamera::blocksReceived = 0;
 int I2SCamera::framesReceived = 0;
 int I2SCamera::xres = 160;
@@ -50,7 +52,7 @@ void I2SCamera::i2sStop() {
 }
 
 void I2SCamera::i2sRun() {
-    ESP_LOGD(cameraLogTag, "I2S Run");
+    ESP_LOGD("Camera", "I2S Run");
     while (gpio_get_level(vSyncPin) == 0);
     while (gpio_get_level(vSyncPin) != 0);
 
@@ -59,7 +61,7 @@ void I2SCamera::i2sRun() {
     blocksReceived = 0;
     dmaBufferActive = 0;
     framePointer = 0;
-    ESP_LOGD(cameraLogTag, "Get sample count");
+    ESP_LOGD("Camera", "Get sample count");
     I2S0.rx_eof_num = dmaBuffer[0]->sampleCount();
     I2S0.in_link.addr = (uint32_t)&(dmaBuffer[0]->descriptor);
     I2S0.in_link.start = 1;
@@ -69,21 +71,21 @@ void I2SCamera::i2sRun() {
     esp_intr_enable(i2sInterruptHandle);
     esp_intr_enable(vSyncInterruptHandle);
     I2S0.conf.rx_start = 1;
-    ESP_LOGD(cameraLogTag, "Done");
+    ESP_LOGD("Camera", "Done");
 }
 
 bool I2SCamera::initVSync(int pin) {
-    ESP_LOGD(cameraLogTag, "Initializing VSYNC");
+    ESP_LOGD("Camera", "Initializing VSYNC");
     vSyncPin = (gpio_num_t)pin;
     gpio_set_intr_type(vSyncPin, GPIO_INTR_POSEDGE);
     gpio_intr_enable(vSyncPin);
 
     if (gpio_isr_handler_add(vSyncPin, vSyncInterrupt,
                              (void *)"vSyncInterrupt") != ESP_OK) {
-        ESP_LOGE(cameraLogTag, "Failed Initializing VSYNC");
+        ESP_LOGE("Camera", "Failed Initializing VSYNC");
         return false;
     }
-    ESP_LOGD(cameraLogTag, "Done");
+    ESP_LOGD("Camera", "Done");
     return true;
 }
 
@@ -96,19 +98,19 @@ bool I2SCamera::init(const int XRES, const int YRES, const int VSYNC,
     xres = XRES;
     yres = YRES;
     frameBytes = XRES * YRES * 2;
-    ESP_LOGD(cameraLogTag, "I2S Init");
+    ESP_LOGD("Camera", "I2S Init");
 
     frame = (unsigned char *)malloc(frameBytes);
     if (!frame) {
-        ESP_LOGE(cameraLogTag, "Not enough memory for frame buffer");
+        ESP_LOGE("Camera", "Not enough memory for frame buffer");
         return false;
     }
     if (!i2sInit(VSYNC, HREF, PCLK, D0, D1, D2, D3, D4, D5, D6, D7)) {
-        ESP_LOGE(cameraLogTag, "Failed initializing i2s");
+        ESP_LOGE("Camera", "Failed initializing i2s");
         return false;
     }
     if (!initVSync(VSYNC)) {
-        ESP_LOGE(cameraLogTag, "Failed initializing VSYNC");
+        ESP_LOGE("Camera", "Failed initializing VSYNC");
         return false;
     }
     dmaBufferInit(xres * 2 * 2);
@@ -130,7 +132,7 @@ bool I2SCamera::i2sInit(const int VSYNC, const int HREF, const int PCLK,
         conf.pin_bit_mask = 1LL << pins[i];
         err = gpio_config(&conf);
         if (err != ESP_OK) {
-            ESP_LOGE(cameraLogTag, "Failed to configure GPIO %d: %s", pins[i],
+            ESP_LOGE("Camera", "Failed to configure GPIO %d: %s", pins[i],
                      esp_err_to_name(err));
             return false;
         }

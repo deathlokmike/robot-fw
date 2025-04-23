@@ -1,3 +1,5 @@
+#pragma once
+
 class KalmanFilter {
    private:
     double R;
