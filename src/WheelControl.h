@@ -1,11 +1,14 @@
 #pragma once
+
 #include <Arduino.h>
 
-enum wheel_direction : uint8_t {
-    forward = 190,
-    backward = 130,
-    right = forward - 120,
-    left = forward - 119
+enum Direction : uint8_t {
+    FORWARD = 190,
+    BACKWARD = FORWARD - 60,
+    RIGHT = FORWARD - 120,
+    LEFT = FORWARD - 119,
+    CORRECTION = FORWARD - 100,
+    STOP = 0
 };
 
 class WheelControl {
@@ -19,12 +22,13 @@ class WheelControl {
     void setup();
 
    public:
-    uint8_t direction = -1;
+    uint8_t direction = Direction::STOP;
     WheelControl();
     void attach(uint8_t in1_, uint8_t in2_, uint8_t in3_, uint8_t in4_);
-    void forward();
+    void forward(bool enableSmoothStart);
     void backward();
     void left();
     void right();
     void stop();
+    void correction(bool toRight);
 };

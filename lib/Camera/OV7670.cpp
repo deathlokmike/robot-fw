@@ -1,36 +1,38 @@
 #include "OV7670.h"
 
+#include "esp_log.h"
+
 bool OV7670::init(const uint8_t VSYNC, const uint8_t HREF, const uint8_t XCLK,
                   const uint8_t PCLK, const uint8_t D0, const uint8_t D1,
                   const uint8_t D2, const uint8_t D3, const uint8_t D4,
                   const uint8_t D5, const uint8_t D6, const uint8_t D7) {
-    ESP_LOGD(cameraLogTag, "Start init camera");
+    ESP_LOGD("Camera", "Start init camera");
     if (!ClockEnable(XCLK, 10000000)) return false;
     if (!I2SCamera::init(160, 120, VSYNC, HREF, XCLK, PCLK, D0, D1, D2, D3, D4,
                          D5, D6, D7))
         return false;
 
-    ESP_LOGD(cameraLogTag, "Waiting for VSYNC...");
+    ESP_LOGD("Camera", "Waiting for VSYNC...");
     pinMode(VSYNC, INPUT);
     while (!digitalRead(VSYNC));
     while (digitalRead(VSYNC));
-    ESP_LOGD(cameraLogTag, "Done");
+    ESP_LOGD("Camera", "Done");
     if (!ping()) return false;
     return QQVGARGB565();
 }
 
 bool OV7670::QQVGARGB565() {
-    ESP_LOGD(cameraLogTag, "Start QQVGARGB565");
+    ESP_LOGD("Camera", "Start QQVGARGB565");
     if (!reset()) return false;
     if (!QQVGA()) return false;
     if (!frameControl(196, 52, 8, 488)) return false;
     if (!saturation()) return false;
-    ESP_LOGD(cameraLogTag, "Done QQVGARGB565");
+    ESP_LOGD("Camera", "Done QQVGARGB565");
     return true;
 }
 
 bool OV7670::reset() {
-    ESP_LOGD(cameraLogTag, "Reset");
+    ESP_LOGD("Camera", "Reset");
     const RegisterValue regValues[] = {
         {REG_COM7, 0b10000000},   // Reset
         {REG_COM7, 0b00000000},   // Fix error 2
@@ -43,7 +45,7 @@ bool OV7670::reset() {
 }
 
 bool OV7670::QQVGA() {
-    ESP_LOGD(cameraLogTag, "QQVGA");
+    ESP_LOGD("Camera", "QQVGA");
     const RegisterValue regValues[] = {
         // 160x120 (1/4)
         // writeRegister(REG_CLKRC, 0x01);
@@ -58,26 +60,18 @@ bool OV7670::QQVGA() {
         {REG_SCALING_DCWCTR, 0x22},
         // pixel clock divided by 4
         {REG_SCALING_PCLK_DIV, 0xf2},
-        {REG_SCALING_PCLK_DELAY, 0x02}};
+        {REG_SCALING_PCLK_DELAY, 0x02},
+        {REG_COM8,
+         COM8_FASTAEC | COM8_AECSTEP | COM8_BFILT | COM8_AGC | COM8_AWB}};
+
     return writeRegisters(regValues, 7);
 }
 
 bool OV7670::saturation() {
     // color matrix values
     const RegisterValue regValues[] = {
-        {0xb0, 0x84},
-        {0x4f, 0x80},
-        {0x50, 0x80},
-        {0x51, 0x00},
-        {0x52, 0x22},
-        {0x53, 0x5e},
-        {0x54, 0x80},
-        // matrix signs
-        {0x58, 0x9e},
-        // AWB on
-        {0x13, 0xe7},
-        // Simple AWB
-        {0x6f, 0x9f},
+        {0x4f, 0x80}, {0x50, 0x80}, {0x51, 0x00}, {0x52, 0x22},
+        {0x53, 0x22}, {0x54, 0x22}, {0x58, 0x9e},
     };
     return writeRegisters(regValues, 10);
 }
@@ -98,11 +92,11 @@ bool OV7670::writeRegisters(const RegisterValue regValues[], uint8_t count) {
     for (size_t i = 0; i < count; ++i) {
         uint8_t i2cCode = writeRegister(regValues[i].reg, regValues[i].val);
         if (i2cCode != 0) {
-            ESP_LOGE(cameraLogTag, "Error: %d, Reg: 0x%X, Val: 0x%X", i2cCode,
+            ESP_LOGE("Camera", "Error: %d, Reg: 0x%X, Val: 0x%X", i2cCode,
                      regValues[i].reg, regValues[i].val);
             return false;
         } else {
-            ESP_LOGD(cameraLogTag, "Successful: %d, Reg: 0x%X, Val: 0x%X",
+            ESP_LOGD("Camera", "Successful: %d, Reg: 0x%X, Val: 0x%X",
                      i2cCode, regValues[i].reg, regValues[i].val);
         }
     }
@@ -117,7 +111,7 @@ uint8_t OV7670::writeRegister(uint8_t reg, uint8_t val) {
 }
 
 bool OV7670::ping() {
-    ESP_LOGD(cameraLogTag, "Ping 0x%X", i2cAddress);
+    ESP_LOGD("Camera", "Ping 0x%X", i2cAddress);
     _wire->beginTransmission(i2cAddress);
     uint8_t error = _wire->endTransmission();
     if (error == 0) {

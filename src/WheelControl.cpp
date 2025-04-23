@@ -1,5 +1,7 @@
 #include "WheelControl.h"
 
+#include "Config.h"
+#include "esp_log.h"
 WheelControl::WheelControl() {};
 
 void WheelControl::attach(uint8_t in1_, uint8_t in2_, uint8_t in3_,
@@ -33,57 +35,75 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
         delay(delay_time);
     }
 
-    analogWrite(gpio1, isStarting ? direction : 0);
-    analogWrite(gpio2, isStarting ? direction : 0);
+    analogWrite(gpio1, isStarting ? direction : Direction::STOP);
+    analogWrite(gpio2, isStarting ? direction : Direction::STOP);
 }
 
-void WheelControl::forward() {
+void WheelControl::forward(bool enableSmoothStart) {
+    if (direction == Direction::FORWARD) return;
     analogWrite(in1, 0);
     analogWrite(in3, 0);
-    direction = wheel_direction::forward;
-    smoothControl(in2, in4, true);
+    direction = Direction::FORWARD;
+    if (enableSmoothStart)
+        smoothControl(in2, in4, true);
+    else {
+        analogWrite(in2, direction);
+        analogWrite(in4, direction);
+    }
 }
 
 void WheelControl::backward() {
+    if (direction == Direction::BACKWARD) return;
     analogWrite(in2, 0);
     analogWrite(in4, 0);
-    direction = wheel_direction::backward;
+    direction = Direction::BACKWARD;
     smoothControl(in1, in3, true);
 }
 
 void WheelControl::left() {
+    if (direction == Direction::LEFT) return;
     analogWrite(in2, 0);
     analogWrite(in3, 0);
-    direction = wheel_direction::left;
+    direction = Direction::LEFT;
     smoothControl(in1, in4, true);
 }
+
 void WheelControl::right() {
+    if (direction == Direction::RIGHT) return;
     analogWrite(in1, 0);
     analogWrite(in4, 0);
-    direction = wheel_direction::right;
+    direction = Direction::RIGHT;
     smoothControl(in2, in3, true);
+}
+
+void WheelControl::correction(bool toRight) {
+    ESP_LOGD(mainLogTag, "Correction to right=%s", toRight ? "true" : "false");
+    analogWrite(in2, toRight ? direction : Direction::CORRECTION);
+    analogWrite(in4, toRight ? Direction::CORRECTION : direction);
 }
 
 void WheelControl::stop() {
     switch (direction) {
-        case wheel_direction::forward:
+        case Direction::STOP:
+            return;
+        case Direction::FORWARD:
             smoothControl(in2, in4, false);
             break;
-        case wheel_direction::backward:
+        case Direction::BACKWARD:
             smoothControl(in1, in3, false);
             break;
-        case wheel_direction::left:
+        case Direction::LEFT:
             smoothControl(in1, in4, false);
             break;
-        case wheel_direction::right:
+        case Direction::RIGHT:
             smoothControl(in2, in3, false);
             break;
         default:
             break;
     }
-    direction = -1;
-    analogWrite(in1, 0);
-    analogWrite(in2, 0);
-    analogWrite(in3, 0);
-    analogWrite(in4, 0);
+    direction = Direction::STOP;
+    analogWrite(in1, Direction::STOP);
+    analogWrite(in2, Direction::STOP);
+    analogWrite(in3, Direction::STOP);
+    analogWrite(in4, Direction::STOP);
 }

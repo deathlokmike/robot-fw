@@ -1,4 +1,5 @@
 #pragma once
+
 #define USB_SPEED 115200
 
 #define CAM_PCLK 33
@@ -29,9 +30,10 @@
 #define TRIG 23
 
 #define WHEEL_DISTANCE_MM 179.07
-#define GYRO_SENSITIVITY 131.0 
+#define GYRO_SENSITIVITY 131.0
 
-const char *ssid = "...";
-const char *password = "...";
-const char *websocket_server = "ws://192.168.1.163:8000/ws/cleaner";
-const String endpoint = "http://192.168.1.163:8000/api/image";
+extern const char* mainLogTag;
+extern const char* ssid;
+extern const char* password;
+extern const char* websocket_server;
+extern const char* endpoint;

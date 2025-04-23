@@ -3,4 +3,4 @@
 logs
 test
 .DS_Store
-Config.h
+Config.cpp
