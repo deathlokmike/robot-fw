@@ -2,20 +2,17 @@
 
 #include "Navo.h"
 
-void doCorrection() {
+void performYawCorrection() {
     static const bool enableSmooth = false;
     static float correctionTime = 0.0;
-    if (navo.autoMode != AutoMode::ACTIVE ||
-        navo.correction == Correction::IN_PROGRESS ||
-        fabs(navo.yawReference - navo.yaw) <= 1.5)
-        return;
-    ESP_LOGI(mainLogTag, "Start correction, diff: %f",
-             navo.yawReference - navo.yaw);
-    navo.correction = navo.yawReference < navo.yaw ? Correction::TO_RIGHT
-                                                   : Correction::TO_LEFT;
-    if (navo.correction == Correction::NO)
-        return;
-    else if (navo.correction == Correction::TO_LEFT) {
+
+    if (navo.correction == Correction::NO and
+        fabs(navo.yawReference - navo.yaw) >= 1.5) {
+        ESP_LOGI(mainLogTag, "Start correction, diff: %f",
+                 navo.yawReference - navo.yaw);
+        navo.correction = navo.yawReference < navo.yaw ? Correction::TO_RIGHT
+                                                       : Correction::TO_LEFT;
+    } else if (navo.correction == Correction::TO_LEFT) {
         navo.wheels.correction(false);
         navo.correction = Correction::IN_PROGRESS;
     } else if (navo.correction == Correction::TO_RIGHT) {
@@ -41,6 +38,6 @@ void autoMode() {
         navo.wheels.stop();
     }
     if (navo.autoMode == AutoMode::ACTIVE) {
-        doCorrection();
+        performYawCorrection();
     }
 }
