@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 
 #include "Config.h"
+#include "Navo.h"
 #include "OV7670.h"
 #include "esp_log.h"
 
@@ -23,6 +24,8 @@ void setupCamera() {
 }
 
 void takeImageAndSendPostRequest() {
+    if (navo.autoMode == AutoMode::DISABLE or navo.autoMode == AutoMode::MANUAL)
+        return;
     camera.oneFrame();
     client.begin(endpoint);
     int httpResponseCode =
