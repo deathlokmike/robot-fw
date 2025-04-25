@@ -11,12 +11,12 @@ CornerCheckState CornerDetector::getState(double distanceFront,
         case CornerCheckState::IDLE:
             if (distanceFront < threshold && distanceFront > 0.0 &&
                 distanceSide < threshold && distanceSide > 0.0) {
-                state = CornerCheckState::CONFIRMING;
+                state = CornerCheckState::CONFIRMING_INNER;
                 confirmationCount = 0;
             }
             break;
 
-        case CornerCheckState::CONFIRMING:
+        case CornerCheckState::CONFIRMING_INNER:
             if (distanceFront < threshold && distanceFront > 0.0 &&
                 distanceSide < threshold && distanceSide > 0.0) {
                 confirmationCount++;

@@ -3,7 +3,8 @@
 
 enum class CornerCheckState : uint8_t {
     IDLE,
-    CONFIRMING,
+    CONFIRMING_INNER,
+    CONFIRMING_OUTER,
     CONFIRMED,
     UNCONFIRMED
 };
