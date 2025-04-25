@@ -22,20 +22,16 @@ void onEventsCallback(websockets::WebsocketsEvent event, String data) {
 
 void onMessageCallback(websockets::WebsocketsMessage message) {
     if (message.data() == "start") {
-        ESP_LOGI(mainLogTag, "Machine started");
         navo.autoMode = AutoMode::ENABLE;
     } else if (message.data() == "stop") {
-        ESP_LOGI(mainLogTag, "Machine stopped");
         navo.autoMode = AutoMode::DISABLE;
     } else if (message.data() == "suspend") {
-        ESP_LOGI(mainLogTag, "Machine suspended");
         navo.autoMode = AutoMode::SUSPEND;
     } else if (message.data() == "resume") {
-        ESP_LOGI(mainLogTag, "Machine resumed");
         navo.autoMode = AutoMode::ACTIVE;
     } else if (message.data() == "remote_forward") {
         navo.autoMode = AutoMode::MANUAL;
-        navo.wheels.forward(true);
+        navo.wheels.forward(true, false);
     } else if (message.data() == "remote_backward") {
         navo.autoMode = AutoMode::MANUAL;
         navo.wheels.backward();
@@ -46,7 +42,7 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
         navo.autoMode = AutoMode::MANUAL;
         navo.wheels.right();
     } else if (message.data() == "remote_stop") {
-        navo.wheels.stop();
+        navo.wheels.stop(true);
         navo.autoMode = AutoMode::DISABLE;
     }
 }
@@ -71,12 +67,27 @@ void pollAndSendData() {
     if (wsClient.available()) {
         wsClient.poll();
         sendTime += navo.dt_loop0;
-        if (sendTime <= 1.0f) return;
 
-        String data = navo.getStr();
-        wsClient.send(data);
-        navo.distanceHall = 0;
-        sendTime = 0.0f;
+        bool sendNow = false;
+
+        if (navo.hallState == HallState::HALL_USED) {
+            sendNow = true;
+        } else if (sendTime >= 1.0f) {
+            sendNow = true;
+        }
+
+        if (sendNow) {
+            String data = navo.getStr();
+            wsClient.send(data);
+
+            if (navo.hallState == HallState::HALL_USED) {
+                navo.distanceHall = 0;
+                navo.hallState = HallState::HALL_RESET;
+            }
+
+            sendTime = 0.0f;
+        }
+
     } else {
         ESP_LOGW(mainLogTag, "WS client is not available");
     }

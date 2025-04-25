@@ -37,6 +37,7 @@ void IRAM_ATTR hallSensorISR() {
         navo.distanceHall += WHEEL_DISTANCE_MM;
     else if (navo.wheels.direction == Direction::BACKWARD)
         navo.distanceHall -= WHEEL_DISTANCE_MM;
+    navo.hallState = HallState::HALL_TRIGGERED;
 }
 
 void setupPowerSensor() {

@@ -3,19 +3,19 @@
 #include "Config.h"
 #include "WheelControl.h"
 
-enum Correction : uint8_t { TO_RIGHT, NO, IN_PROGRESS };
+enum Correction : uint8_t { TO_RIGHT, TO_LEFT, NO, IN_PROGRESS };
 
 enum AutoMode : uint8_t { ENABLE, ACTIVE, DISABLE, SUSPEND, MANUAL };
 
+enum HallState : uint8_t { HALL_TRIGGERED, HALL_USED, HALL_RESET };
+
 class Navo {
    public:
-    bool isAngle;
-
     double distanceFront;
     double distanceSide;
     double distanceHall;
     double yaw;
-    double yawReference;
+    double targetYaw;
     double t_loop0;
     double t_loop1;
 
@@ -27,12 +27,13 @@ class Navo {
     uint8_t autoMode = AutoMode::DISABLE;
     uint8_t correction = Correction::NO;
     uint8_t previousDirection = Direction::STOP;
+    uint8_t hallState = HallState::HALL_RESET;
 
     WheelControl wheels = WheelControl();
 
     Navo() {
         wheels.attach(IN1, IN2, IN3, IN4);
-        wheels.stop();
+        wheels.stop(false);
     }
 
     inline String getStr() {
