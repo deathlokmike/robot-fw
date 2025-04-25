@@ -46,7 +46,6 @@ void onMessageCallback(websockets::WebsocketsMessage message) {
         navo.autoMode = AutoMode::MANUAL;
         navo.wheels.right();
     } else if (message.data() == "remote_stop") {
-        navo.autoMode = AutoMode::MANUAL;
         navo.wheels.stop();
         navo.autoMode = AutoMode::DISABLE;
     }

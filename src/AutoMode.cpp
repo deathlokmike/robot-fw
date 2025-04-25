@@ -1,10 +1,12 @@
 #include "AutoMode.h"
 
+#include "CornerDetector.h"
 #include "Navo.h"
 
-void performYawCorrection() {
-    static const bool enableSmooth = false;
+CornerDetector cornerDetector;
 
+void performYawCorrection() {
+    if (navo.wheels.direction != Direction::FORWARD) return;
     if (navo.correction == Correction::NO and
         navo.yaw - navo.yawReference >= 2.0) {
         ESP_LOGD(mainLogTag, "Start correction, yaw: %f, yawRef: %f", navo.yaw,
@@ -16,11 +18,47 @@ void performYawCorrection() {
     } else if (navo.correction == Correction::IN_PROGRESS) {
         ESP_LOGD(mainLogTag, "yaw: %f", navo.yaw);
         if (navo.yaw - navo.yawReference <= 0.5) {
-            navo.wheels.forward(enableSmooth);
+            navo.wheels.forward(false);
             navo.correction = Correction::NO;
             ESP_LOGI(mainLogTag, "STOP CORRECTION");
         }
     }
+}
+
+void sideDistanceCorrection() {
+    if (navo.distanceHall <= 0.0) return;
+}
+
+bool rotate(double angle) {
+    ESP_LOGD(mainLogTag, "Rotate, yaw: %f, set angle: %f", navo.yaw,
+             navo.yawReference + angle);
+    if (angle > 0.0)
+        navo.wheels.left();
+    else
+        navo.wheels.right();
+    if (navo.yaw >= navo.yawReference + angle) {
+        navo.yawReference = navo.yaw;
+        navo.wheels.stop();
+        return true;
+    }
+    return false;
+}
+
+void detectCorner() {
+    CornerCheckState checkState =
+        cornerDetector.getState(navo.distanceFront, navo.distanceSide);
+    if (checkState == CornerCheckState::CONFIRMING) {
+        navo.wheels.stop();
+        return;
+    } else if (checkState == CornerCheckState::UNCONFIRMED) {
+        navo.wheels.forward(true);
+        return;
+    } else if (checkState == CornerCheckState::IDLE)
+        return;
+    if (!rotate(90)) return;
+    ESP_LOGI(mainLogTag, "Rotate finished");
+    cornerDetector.reset();
+    navo.wheels.forward(true);
 }
 
 void autoMode() {
@@ -33,6 +71,8 @@ void autoMode() {
         navo.wheels.stop();
     }
     if (navo.autoMode == AutoMode::ACTIVE) {
+        sideDistanceCorrection();
         performYawCorrection();
+        detectCorner();
     }
 }
