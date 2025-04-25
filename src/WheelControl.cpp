@@ -39,15 +39,16 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
     analogWrite(gpio2, isStarting ? direction : Direction::STOP);
 }
 
-void WheelControl::forward(bool enableSmoothStart) {
+void WheelControl::forward(bool enableSmoothStart, bool enableSlowMode) {
     analogWrite(in1, 0);
     analogWrite(in3, 0);
     direction = Direction::FORWARD;
     if (enableSmoothStart)
         smoothControl(in2, in4, true);
     else {
-        analogWrite(in2, direction);
-        analogWrite(in4, direction);
+        uint8_t speed = enableSlowMode ? direction - 130 : direction;
+        analogWrite(in2, speed);
+        analogWrite(in4, speed);
     }
 }
 
@@ -81,25 +82,28 @@ void WheelControl::correction(bool toRight) {
     analogWrite(in4, toRight ? Direction::CORRECTION : direction);
 }
 
-void WheelControl::stop() {
-    switch (direction) {
-        case Direction::STOP:
-            return;
-        case Direction::FORWARD:
-            smoothControl(in2, in4, false);
-            break;
-        case Direction::BACKWARD:
-            smoothControl(in1, in3, false);
-            break;
-        case Direction::LEFT:
-            smoothControl(in1, in4, false);
-            break;
-        case Direction::RIGHT:
-            smoothControl(in2, in3, false);
-            break;
-        default:
-            break;
+void WheelControl::stop(bool enableSmoothStop) {
+    if (enableSmoothStop) {
+        switch (direction) {
+            case Direction::STOP:
+                return;
+            case Direction::FORWARD:
+                smoothControl(in2, in4, false);
+                break;
+            case Direction::BACKWARD:
+                smoothControl(in1, in3, false);
+                break;
+            case Direction::LEFT:
+                smoothControl(in1, in4, false);
+                break;
+            case Direction::RIGHT:
+                smoothControl(in2, in3, false);
+                break;
+            default:
+                break;
+        }
     }
+
     direction = Direction::STOP;
     analogWrite(in1, Direction::STOP);
     analogWrite(in2, Direction::STOP);

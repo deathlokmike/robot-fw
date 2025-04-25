@@ -25,10 +25,10 @@ class WheelControl {
     uint8_t direction = Direction::STOP;
     WheelControl();
     void attach(uint8_t in1_, uint8_t in2_, uint8_t in3_, uint8_t in4_);
-    void forward(bool enableSmoothStart);
+    void forward(bool enableSmoothStart, bool enableSlowMode);
     void backward();
     void left();
     void right();
-    void stop();
+    void stop(bool enableSmoothStop);
     void correction(bool toRight);
 };
