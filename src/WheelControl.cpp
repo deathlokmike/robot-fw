@@ -24,6 +24,7 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
                                  bool isStarting) {
     const uint8_t steps = 10;
     const uint8_t delay_time = 10;
+    uint8_t speed = direction;
     int step = direction / steps;
 
     if (!isStarting) step = -step;
@@ -34,8 +35,13 @@ void WheelControl::smoothControl(uint8_t gpio1, uint8_t gpio2,
         analogWrite(gpio2, i);
         delay(delay_time);
     }
+    if (direction == Direction::FORWARD)
+        speed += 4;
+    else if (direction == Direction::BACKWARD) {
+        speed -= 4;
+    }
 
-    analogWrite(gpio1, isStarting ? direction : Direction::STOP);
+    analogWrite(gpio1, isStarting ? speed : Direction::STOP);
     analogWrite(gpio2, isStarting ? direction : Direction::STOP);
 }
 
@@ -46,8 +52,8 @@ void WheelControl::forward(bool enableSmoothStart, bool enableSlowMode) {
     if (enableSmoothStart)
         smoothControl(in2, in4, true);
     else {
-        uint8_t speed = enableSlowMode ? direction - 130 : direction;
-        analogWrite(in2, speed);
+        uint8_t speed = enableSlowMode ? 60 : direction;
+        analogWrite(in2, speed + 4);
         analogWrite(in4, speed);
     }
 }
@@ -78,8 +84,8 @@ void WheelControl::right() {
 
 void WheelControl::correction(bool toRight) {
     ESP_LOGI(mainLogTag, "Correction to right=%s", toRight ? "true" : "false");
-    analogWrite(in2, toRight ? direction : Direction::CORRECTION);
-    analogWrite(in4, toRight ? Direction::CORRECTION : direction);
+    analogWrite(in2, toRight ? direction - 40 : Direction::CORRECTION);
+    analogWrite(in4, toRight ? Direction::CORRECTION : direction - 40);
 }
 
 void WheelControl::stop(bool enableSmoothStop) {

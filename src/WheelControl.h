@@ -3,11 +3,11 @@
 #include <Arduino.h>
 
 enum Direction : uint8_t {
-    FORWARD = 190,
-    BACKWARD = FORWARD - 60,
-    RIGHT = FORWARD - 120,
-    LEFT = FORWARD - 119,
-    CORRECTION = FORWARD - 100,
+    FORWARD = 160,
+    BACKWARD = 120,
+    RIGHT = 70,
+    LEFT = 71,
+    CORRECTION = 72,
     STOP = 0
 };
 
